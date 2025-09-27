@@ -7,208 +7,189 @@
 ## A) Agent‑Oriented MCP Functionality (LLM / IDE view)
 
 ### A1. Capability discovery → Onshape scope
-**MCP feature:** `tools/list`, `resources/list`, `prompts/list` expose what the server can do.  
-**Onshape mapping:** Documents, Workspaces/Versions, Elements (Part Studios, Assemblies, Drawings), BOM, Release state. Onshape organizes data as Documents → (Workspaces/Versions) → Elements; versions are immutable, workspaces are live. citeturn0search10turn0search15
+MCP discovery (`tools/list`, `resources/list`, `prompts/list`) surfaces all available operations.  
+Map to Onshape concepts: Documents, Workspaces, Versions, Elements, BOM, Release states.
 
-**Recommended surface (discovery-friendly names):**
-- `os.listDocuments`, `os.listWorkspaces`, `os.listVersions`, `os.listElements`  
-- `os.getAssemblyGraph`, `os.getBOM`, `os.getReleaseState`  
-- `os.export` (STEP/GLTF/PDF), `os.createVersion`, `os.submitRelease`
+Key references:  
+- Onshape REST Intro: https://onshape-public.github.io/docs/api-intro/  
+- Versions/Branching Primer: https://cad.onshape.com/help/Content/Primer/versions.htm
 
-> Why it matters to agents: the discovery calls let a slow/long‑thinking model plan multi‑step flows (e.g., “freeze a version, then export, then compare BOM”).
-
----
-
-### A2. Tool calls (actions) with **progress** and **streaming**
-**MCP feature:** JSON‑RPC requests + **progress notifications** over the chosen transport (stdio or **Streamable HTTP** with SSE). citeturn0search4  
-**Onshape mapping:** Long operations (translations/exports, BOM traversal, graph queries) run as **jobs** and stream incremental status/partials to the client. Webhooks can fan‑in completion signals. citeturn0search1turn0search6
-
-**Agent benefit:** Works well with **slow/experimental models**—the host receives heartbeat/progress messages and doesn’t block on a single huge response.
+**Discovery surface (examples):**
+- `os.listDocuments`, `os.listWorkspaces`, `os.listVersions`, `os.listElements`
+- `os.getAssemblyGraph`, `os.getBOM`, `os.getReleaseState`
+- `os.export`, `os.createVersion`, `os.submitRelease`
 
 ---
 
-### A3. Resources (read‑only blobs/handles)
-**MCP feature:** Servers can expose **resources** (files, URLs, small datasets) for download/inspection.  
-**Onshape mapping:** Exported STEP/GLTF/PDF files, paged BOM CSV/JSON, graph snapshots. **Immutable** resources should be associated with an Onshape **Version** (not a Workspace) to ensure downstream reproducibility. citeturn0search15
+### A2. Tool calls with Progress & Streaming
+MCP uses JSON‑RPC with **progress notifications** over **stdio** or **Streamable HTTP + SSE**.  
+Onshape’s long‑running jobs (e.g., translation/export) fit this perfectly.
+
+References:  
+- MCP Transports: https://modelcontextprotocol.io/docs/concepts/transports  
+- Onshape Translation API: https://onshape-public.github.io/docs/api-adv/translation/  
+
+Benefits for slow models: non‑blocking, observable progress, resumable.
 
 ---
 
-### A4. Prompts (guided UI/LLM interactions)
-**MCP feature:** Predefined **prompts** help an agent collect the right parameters and context iteratively (e.g., “pick document → pick version → pick element”).  
-**Onshape mapping:** Prompt chains to traverse document hierarchy, verify release state, and ask consent before writes (release submit/BOM change). **Release workflows** are native to Onshape; MCP prompts should reflect current revision/status instead of inventing parallel states. citeturn0search23
+### A3. Resources (Files, Datasets)
+Expose Onshape artifacts as MCP **resources** (URLs or handles).  
+Attach deterministic scope → use **Version**, not Workspace.
+
+References:  
+- Export Overview: https://cad.onshape.com/help/Content/exporting-files.htm  
+- Versions Primer: https://cad.onshape.com/help/Content/Primer/versions.htm  
 
 ---
 
-### A5. Auth clarity for agents
-**Recommended policy messages** (exposed as `resources` or `prompts`):  
-- App‑store apps must use **OAuth2**; non‑store automation can use **API keys**. Show current auth mode and scopes to the user/agent. citeturn0search8turn0search12
+### A4. Prompts (Guided Interactions)
+Predefined **prompts** help navigate document hierarchy and workflows.  
+Use for selection (Doc → Version → Element), consent dialogs, and release readiness.
+
+Reference: Release Management  
+https://cad.onshape.com/help/Content/release_management.htm
 
 ---
 
-### A6. What an agent can do (capability → Onshape op)
+### A5. Auth clarity
+- OAuth2 for user apps (required for App Store)  
+- API Keys for automation
+- Expose mode & scopes as readable resource
 
-| MCP capability | Onshape concept | Typical agent behaviors |
-|---|---|---|
-| `os.listDocuments` | Search Documents | Disambiguate names; choose scope for all next steps. citeturn0search10 |
-| `os.listWorkspaces` / `os.listVersions` | Branch vs immutable snapshot | Prefer **Version** for exports/ERP sync; Workspace for active edits. citeturn0search15 |
-| `os.listElements` | Tabs: Part Studios, Assemblies, Drawings | Type‑aware filtering; pick assembly root for graph/BOM. |
-| `os.getAssemblyGraph` | Instances, where‑used | Plan “impact analysis” or part roll‑ups. |
-| `os.getBOM` | BOM API | Export/compare released vs working; stage ERP sync. citeturn0search3turn0search18 |
-| `os.export` | Translation/export | Kick off STEP/GLTF/PDF; stream progress and return artifact link. citeturn0search1 |
-| `os.getReleaseState` / `os.submitRelease` | Release workflow & revisions | Check readiness and submit with approvers/notes. citeturn0search23 |
+References:  
+- OAuth2 Guide: https://onshape-public.github.io/docs/auth/  
+- API Keys: https://onshape-public.github.io/docs/auth/apikeys/
 
 ---
 
-### A7. Slow‑model playbook (agent‑side expectations)
-- Expect **202‑style** job semantics via progress events, not a single reply.  
-- Prefer Version IDs for any artifact creation/consumption. citeturn0search15  
-- Use **capability discovery** first; don’t guess names/IDs.  
-- Handle **cancellation** messages and **timeouts** gracefully; resume using `jobId`/resource handles.
+### A6. Agent Capability Matrix
+
+| MCP Tool | Onshape Area | Example |
+|-----------|--------------|----------|
+| `os.listDocuments` | Search | Find design docs |
+| `os.listWorkspaces` | Branches | Choose working branch |
+| `os.listVersions` | Snapshots | Pick stable revision |
+| `os.listElements` | Tabs | Get Assemblies/Drawings |
+| `os.getAssemblyGraph` | Structure | Explore hierarchy |
+| `os.getBOM` | BOM API | Compare released vs working |
+| `os.export` | Translation | Export STEP/GLTF/PDF |
+| `os.submitRelease` | Workflow | Submit revision for approval |
 
 ---
 
-## B) System Integration Architecture (Developer / Server view)
+### A7. Best Practices for Slow Models
+- Expect async jobs & progress streams  
+- Use capability discovery, not guesses  
+- Resume via jobId/resources  
+- Prefer Version IDs for artifacts
 
-### B1. Topology (MCP‑first)
+---
+
+## B) System Integration Architecture (Developer / Server View)
+
+### B1. Topology
 
 ```
 MCP Client (LLM/IDE)
-   └── Transport: stdio  ⟂  Streamable HTTP (+SSE)  ← JSON‑RPC 2.0 messages
-        └── MCP Server (Onshape tools/resources/prompts)
-              ├─ Tool handlers (use‑cases)
-              │    └─ Onshape REST adapter (OAuth2/API key)
-              │         ├─ Documents / Workspaces / Versions / Elements
-              │         ├─ Release & Revisions
-              │         └─ BOM & Translations (exports)
-              ├─ Job orchestrator + progress bus (SSE)
-              ├─ Resource store (artifacts, pages)
-              └─ Webhook receiver (event fan‑in → job updates)
+ └── stdio / Streamable HTTP (SSE)
+      └── MCP Server
+            ├─ Tools Layer (JSON‑RPC)
+            │   └─ Onshape REST Adapter (OAuth2/API Key)
+            ├─ Job Queue & Progress Bus
+            ├─ Resource Store (Artifacts, Pages)
+            └─ Webhook Receiver (Event Fan‑In)
 ```
-**Transports:** MCP defines **stdio** and **Streamable HTTP**; use SSE to stream progress/partials. citeturn0search4
+
+References:  
+- MCP Architecture: https://modelcontextprotocol.io/docs/concepts/architecture  
+- Onshape Webhooks: https://onshape-public.github.io/docs/app-dev/webhook/
 
 ---
 
-### B2. Tool design (MCP methods backed by REST)
+### B2. Tool Mapping
 
-| Tool (MCP) | REST to Onshape (examples) | Notes |
-|---|---|---|
-| `os.listDocuments` | Search/GET documents | Return a compact list with IDs/titles/owners. citeturn0search10 |
-| `os.listWorkspaces` | GET workspaces | Always present `workspaceId` and label “Main”. citeturn0search20 |
-| `os.listVersions` | GET versions | Immutable; prefer for exports. citeturn0search15 |
-| `os.listElements` | GET elements | Include type (Part Studio / Assembly / Drawing). |
-| `os.getAssemblyGraph` | GET assembly instances | Stream large graphs in chunks if needed. |
-| `os.getBOM` | BOM API endpoints | Provide `view=released|working`. citeturn0search3 |
-| `os.export` | Translation/export endpoints | Return `jobId`; update via polling + webhooks. citeturn0search1 |
-| `os.getReleaseState` | Release status endpoints | Map to Onshape release objects & revisions. citeturn0search23 |
-| `os.submitRelease` | POST release package | Validate candidates; include approvers/notes. citeturn0search23 |
-
----
-
-### B3. Async orchestration for long CAD ops
-
-**Pattern:** Start job → progress via SSE → optional webhook → finalize resource.  
-- **Why:** Onshape exports/translations and deep graph traversals can be slow. Webhooks deliver **HTTP POST JSON** notifications; your receiver updates job state. citeturn0search1turn0search6  
-- **Idempotency:** Use request hashes per started job and dedupe retries.  
-- **Backpressure:** Queue priorities (interactive vs batch), per‑org limits.  
-- **Resilience:** At‑least‑once webhook delivery → design idempotent consumers. citeturn0search1
+| MCP Tool | REST Endpoint | Notes |
+|-----------|----------------|-------|
+| `os.listDocuments` | /api/documents | List user/company docs |
+| `os.listWorkspaces` | /api/documents/{id}/workspaces | Active branches |
+| `os.listVersions` | /api/documents/{id}/versions | Immutable |
+| `os.listElements` | /api/documents/{id}/{ctx}/elements | Tabs |
+| `os.getAssemblyGraph` | /api/assemblies/... | Instance tree |
+| `os.getBOM` | /api/assemblies/.../bom | Paged rows |
+| `os.export` | /api/partstudios/.../translations | Async job |
+| `os.submitRelease` | /api/releasepackages | Approvals |
 
 ---
 
-### B4. Security & auth
+### B3. Async Orchestration
+- Start job → progress via SSE → optional webhook → finalize resource  
+- Idempotent handlers  
+- Queue priorities  
+- Backpressure control
 
-- **OAuth2** for user‑facing apps; **API Keys** for automation. App‑store submissions must use OAuth2. citeturn0search8turn0search12  
-- Store refresh tokens securely; rotate keys; expose current auth mode via a readable MCP resource.  
-- Enforce **least privilege** scopes; hide write tools dynamically if scope is insufficient.
-
----
-
-### B5. Resource lifecycle
-
-- Artifacts (STEP/GLTF/PDF) are stored with metadata: `(documentId, versionId, elementId, microversion, createdAt)`.  
-- Provide **signed URLs** or MCP resource URIs; keep BOM/graph outputs **paged** for big models.  
-- Prefer **Version** scope for any artifact to guarantee determinism across time. citeturn0search15
+References:  
+- Webhook Help: https://cad.onshape.com/help/Content/Plans/webhooks.htm
 
 ---
 
-### B6. Server contracts (sketches)
-
-**Example: `tools/call os.export` request**  
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "42",
-  "method": "tools/call",
-  "params": {
-    "name": "os.export",
-    "arguments": {
-      "documentId": "d123",
-      "context": { "versionId": "v456" },
-      "elementId": "e789",
-      "format": "STEP",
-      "options": { "precision": "0.01mm" }
-    }
-  }
-}
-```
-**Progress (SSE over Streamable HTTP):**  
-```
-event: progress
-data: {"id":"42","stage":"translating","percent":37}
-```
-**Completion:**  
-```
-event: complete
-data: {"id":"42","result":{"resource":"res://exports/2f7c/part.step"}}
-```
-**Transport note:** MCP standard transports are **stdio** and **Streamable HTTP**; both carry JSON‑RPC 2.0 messages. citeturn0search4turn0search11turn0search19
+### B4. Security
+- OAuth2 (users) / API Keys (automation)  
+- Secure token store  
+- Least privilege scopes  
+- Auth mode resource
 
 ---
 
-### B7. Release‑aware behaviors
-
-- If `os.getReleaseState` reports a pending newer revision, annotate `os.export` and `os.getBOM` results with warnings.  
-- `os.submitRelease` should surface Onshape’s **native workflow** (states, approvers) rather than inventing custom statuses. citeturn0search23
-
----
-
-### B8. Observability & ops
-
-- **Tracing:** Tag every Onshape call with `documentId`, `ctx`, `elementId`, `jobId`.  
-- **SLOs:** Interaction p95 vs batch p95; webhook delivery lag; translation completion times.  
-- **Kill switches:** Feature flags to disable writes/exports.  
-- **Glassworks:** When debugging, the Glassworks API Explorer helps verify endpoints/requests quickly. citeturn0search5
+### B5. Resource Lifecycle
+- Metadata: (documentId, versionId, elementId)  
+- Signed URLs for artifacts  
+- Paging for large BOMs  
+- Always use Version context
 
 ---
 
-## C) Quick reference tables
-
-### C1. MCP features → Onshape operations
-
-| MCP Feature | Implementation in this design | Onshape linkage |
-|---|---|---|
-| Tools | `os.*` methods (see B2) | Onshape REST endpoints (Documents/Elements/BOM/Release) citeturn0search10turn0search3turn0search23 |
-| Resources | Artifact URIs + paged datasets | Exports (STEP/GLTF/PDF), BOM/graph pages citeturn0search1 |
-| Prompts | Multi‑step pickers & consent prompts | Document→Version→Element selection; release checks citeturn0search23 |
-| Progress | SSE/stdio notifications | Jobs + webhook fan‑in for completion citeturn0search1 |
-| Transports | stdio / Streamable HTTP | MCP standard transports (JSON‑RPC 2.0) citeturn0search4 |
-
-### C2. Slow‑model safeguards
-
-| Concern | Mechanism |
-|---|---|
-| High latency | Always async for heavy ops; SSE heartbeats |
-| Idle disconnects | Keep‑alive pings; resumable `jobId` |
-| Token limits | Paged BOM/graph; small resource manifests |
-| Duplicate POSTs | Idempotency keys; request hashing |
-| Partial failure | Idempotent webhook handlers; retry with backoff |
+### B6. Example Job Flow
+1. `tools/call os.export`  
+2. Server enqueues translation  
+3. Sends progress (queued→running→done)  
+4. Onshape webhook triggers completion update  
+5. MCP emits `complete` with resource URL
 
 ---
 
-## D) Sources & pointers
+### B7. Release Awareness
+- Warn on outdated revision  
+- Mirror native release states  
+- Do not duplicate workflows
 
-- **Onshape REST Intro & structure (Documents/Workspaces/Versions/Elements):** official dev docs & primer. citeturn0search10turn0search15  
-- **Auth:** OAuth2 vs API Keys; app‑store rule. citeturn0search8turn0search12  
-- **Webhooks:** delivery model and settings. citeturn0search1turn0search6  
-- **Release Mgmt:** workflows & revisions. citeturn0search23  
-- **BOM:** feature overview and API availability; sample app. citeturn0search3turn0search18  
-- **MCP Transports/Architecture:** stdio & Streamable HTTP; JSON‑RPC basis. citeturn0search4turn0search7turn0search11turn0search19
+---
+
+### B8. Observability
+- Trace: docId, ctx, elementId, jobId  
+- Metrics: latency, completion rate  
+- Feature flags: disable writes quickly
+
+---
+
+## C) Feature Mapping Summary
+
+| MCP Feature | Purpose | Onshape Link |
+|--------------|----------|---------------|
+| Tools | Invoke CAD/PLM ops | REST API |
+| Resources | Artifact/Data | Exports, BOM pages |
+| Prompts | Guided steps | Selection, Consent |
+| Progress | Async status | SSE / Webhooks |
+| Transports | Delivery | stdio / HTTP+SSE |
+
+---
+
+## D) Key References
+
+- Onshape API Intro: https://onshape-public.github.io/docs/api-intro/  
+- Onshape Versions: https://cad.onshape.com/help/Content/Primer/versions.htm  
+- Release Mgmt: https://cad.onshape.com/help/Content/release_management.htm  
+- Exporting Files: https://cad.onshape.com/help/Content/exporting-files.htm  
+- BOM Feature: https://www.onshape.com/en/features/bill-of-materials  
+- MCP Architecture: https://modelcontextprotocol.io/docs/concepts/architecture  
+- MCP Transports: https://modelcontextprotocol.io/docs/concepts/transports  
